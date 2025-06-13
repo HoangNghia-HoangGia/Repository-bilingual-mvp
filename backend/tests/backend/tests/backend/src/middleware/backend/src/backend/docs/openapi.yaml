@@ -1,0 +1,36 @@
+openapi: 3.0.1
+info:
+  title: Bilingual MVP API
+  version: 1.0.0
+servers:
+  - url: /api
+paths:
+  /auth/register:
+    post:
+      summary: Register new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterPayload'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+components:
+  schemas:
+    RegisterPayload:
+      type: object
+      required: [email, password, fullName]
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        fullName: { type: string }
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string }
