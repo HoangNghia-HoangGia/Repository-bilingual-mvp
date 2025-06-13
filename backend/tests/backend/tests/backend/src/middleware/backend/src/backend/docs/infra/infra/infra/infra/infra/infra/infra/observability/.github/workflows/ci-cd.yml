@@ -1,0 +1,80 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [16, 18]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install & Lint
+        run: |
+          cd backend
+          npm ci
+          npm run lint
+          npm run format:check
+
+      - name: Test with Coverage
+        run: |
+          cd backend
+          npm test
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v1.5.0
+        with:
+          args: >
+            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+      - name: Snyk Test
+        uses: snyk/actions/node@master
+        with:
+          args: test
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Trivy Scan
+        uses: aquasecurity/trivy-action@v0.1.5
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/backend:latest
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Build & Push Docker
+        env:
+          REGISTRY: ${{ secrets.ECR_REGISTRY }}
+        run: |
+          cd backend
+          docker build -t $REGISTRY/backend:${{ github.sha }} .
+          echo ${{ secrets.ECR_PASSWORD }} | docker login --username AWS --password-stdin $REGISTRY
+          docker push $REGISTRY/backend:${{ github.sha }}
+
+  deploy-staging:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Infra
+        uses: actions/checkout@v3
+        with:
+          path: infra
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+      - name: Terraform Init & Apply (staging)
+        working-directory: infra
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          terraform init
+          terraform workspace select staging || terraform workspace new staging
+          terraform apply -auto-approve
