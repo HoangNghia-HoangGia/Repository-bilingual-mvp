@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: observability
+data:
+  otel-collector-config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: {}
+          http: {}
+    processors:
+      batch:
+      probabilistic_sampler:
+        sampling_percentage: 20.0
+      tail_sampling:
+        policies:
+          - name: error-or-slow
+            type: latency
+            latency:
+              threshold: 500ms
+            sampling_percentage: 100
+            decision_wait: 30s
+    exporters:
+      jaeger:
+        endpoint: "jaeger-collector.observability.svc.cluster.local:14250"
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [probabilistic_sampler, tail_sampling, batch]
+          exporters: [jaeger]
